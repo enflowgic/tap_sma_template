@@ -1,0 +1,163 @@
+# =============================================================================
+# TAP AGENT MANIFEST
+# =============================================================================
+#
+# This manifest is REQUIRED for TAP platform integration.
+# Used for automated onboarding, deployment, and registry registration.
+#
+# TODO: Fill in ALL sections marked with TODO before deployment
+# =============================================================================
+
+apiVersion: tap/v1
+kind: AgentManifest
+
+# =============================================================================
+# AGENT IDENTIFICATION
+# =============================================================================
+metadata:
+  # Unique identifier (kebab-case, 3-50 chars)
+  # This becomes the agent's URL slug: /agents/my-agent
+  # TODO: Change to your agent's unique slug
+  slug: my-agent
+
+  # Human-readable name
+  # TODO: Change to your agent's display name
+  display_name: My Agent
+
+  # Semantic version (MAJOR.MINOR.PATCH)
+  version: 1.0.0
+
+  # AI model used by this agent
+  # Current options: gemini-3-flash-preview, gemini-3-pro-preview
+  model: gemini-3-flash-preview
+
+  # Description (50-500 chars)
+  # Used for semantic search in Cognee Registry
+  # TODO: Write a clear description
+  description: |
+    A TAP-compatible template agent.
+
+    TODO: Describe what your agent does, its capabilities,
+    and what problems it solves.
+
+# =============================================================================
+# PROVIDER INFORMATION
+# =============================================================================
+provider:
+  # Your organization's email (unique identifier)
+  # TODO: Change to your organization's email
+  organization: developer@example.com
+
+  # Display name for your organization
+  # TODO: Change to your organization's name
+  organization_name: My Organization
+
+  # Support contact (optional)
+  support_email: support@example.com
+
+# =============================================================================
+# SCHEMA DEFINITIONS
+# =============================================================================
+# Paths to Pydantic models that define input/output contracts.
+# =============================================================================
+schemas:
+  # Input schema - REQUIRED
+  input:
+    file: agent/input_schema.py
+    class: AgentInputSchema
+
+  # Output schema - RECOMMENDED
+  output:
+    file: agent/output_schema.py
+    class: AgentOutputSchema
+
+# =============================================================================
+# DISCOVERY CONFIGURATION
+# =============================================================================
+discovery:
+  # Tier: primary | secondary | tertiary
+  tier: tertiary
+
+  # Public marketplace visibility
+  is_public: true
+
+  # Currently accepting requests
+  is_active: true
+
+# =============================================================================
+# CAPABILITIES & SKILLS
+# =============================================================================
+capabilities:
+  mode: manual
+  primary:
+    - task_processing
+  secondary:
+    - clarification_gathering
+
+skills:
+  - id: main-skill
+    name: Main Skill
+    description: TODO - Describe what this skill does
+
+# =============================================================================
+# DEPLOYMENT CONFIGURATION
+# =============================================================================
+deployment:
+  # Runtime: vertex-ai | cloud-run
+  runtime: vertex-ai
+
+  # AI model (should match metadata.model)
+  model: gemini-3-flash-preview
+
+  # Resources
+  resources:
+    cpu: 4
+    memory: 4Gi
+    timeout_seconds: 120
+    max_instances: 10
+
+  # Region (us-central1 recommended for stability)
+  region: us-central1
+
+  # Environment variables
+  env:
+    - name: LOG_LEVEL
+      value: INFO
+
+# =============================================================================
+# RUNTIME CONFIGURATION
+# =============================================================================
+runtime:
+  # Entry points
+  main: runtime/main.py
+  server: runtime/server.py
+  deploy: runtime/deploy_vertex.py
+
+  # Requirements
+  requirements: runtime/requirements.txt
+
+# =============================================================================
+# PROMPTS CONFIGURATION
+# =============================================================================
+prompts:
+  register: true
+  source: agent/prompts.py
+  types:
+    - system
+    - context_injection
+
+# =============================================================================
+# DISCOVERY TAGS
+# =============================================================================
+tags:
+  - template
+  - example
+  # TODO: Add relevant tags for your agent
+
+# =============================================================================
+# VALIDATION RULES
+# =============================================================================
+validation:
+  required_input_fields:
+    - task
+  required_output_fields: []

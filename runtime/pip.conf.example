@@ -1,0 +1,10 @@
+# pip configuration for TAP Artifact Registry
+# Copy this file to pip.conf and update with your registry URL
+#
+# To configure:
+# 1. Copy to pip.conf: cp pip.conf.example pip.conf
+# 2. Update the URL below with your TAP Artifact Registry endpoint
+# 3. Authenticate: gcloud auth application-default login
+
+[global]
+extra-index-url = https://YOUR_REGION-python.pkg.dev/YOUR_PROJECT/YOUR_REPO/simple/
