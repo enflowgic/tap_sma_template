@@ -49,13 +49,8 @@ python server.py            # A2A server
 
 ### 5. Deploy
 
-```bash
-# Deploy to Vertex AI
-python runtime/deploy_vertex.py
+Contact Jamie at jamie@tailoredagents.ai with a link to your public repo and he will deploy it on the mesh and register it with your account.
 
-# Or start FastAPI server for Cloud Run
-python runtime/server.py
-```
 
 ## Directory Structure
 
