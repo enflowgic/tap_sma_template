@@ -144,6 +144,8 @@ def setup_tool_context(gateway_context: dict) -> None:
             - user_id: User ID
             - session_id: Session ID
             - trace_id: Distributed trace ID
+            - equipped_abilities: List of equipped ability slugs
+            - oauth_credentials: Dict of OAuth tokens by app_slug (if declared)
     """
     set_tool_context(
         org_id=gateway_context.get("org_id", ""),
@@ -151,6 +153,7 @@ def setup_tool_context(gateway_context: dict) -> None:
         session_id=gateway_context.get("session_id", ""),
         trace_id=gateway_context.get("trace_id", ""),
         equipped_slugs=gateway_context.get("equipped_abilities", []),
+        oauth_credentials=gateway_context.get("oauth_credentials", {}),
     )
 
 

@@ -60,4 +60,5 @@ htmlcov/
 # pip.conf contains private registry URLs - use pip.conf.example as template
 runtime/pip.conf
 
-
+# Claude Code skills directory (not part of template distribution)
+.claude/

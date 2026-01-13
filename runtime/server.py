@@ -56,6 +56,7 @@ from google.adk.runners import InMemoryRunner
 
 from agent import root_agent, AGENT_CARD, AGENT_NAME, AgentInputSchema
 from agent.definition import setup_tool_context
+from agent.exceptions import MissingCredentialsError
 
 # Configure logging
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -184,13 +185,17 @@ async def jsonrpc_handler(request: Request):
     session_id = params.get("session_id") or f"sess-{uuid4().hex[:16]}"
     trace_id = params.get("trace_id") or request.headers.get("X-Trace-ID", f"trace-{uuid4().hex[:16]}")
 
-    # Set tool context for mesh tools
+    # Extract OAuth credentials if provided by Gateway
+    oauth_credentials = params.get("oauth_credentials", {})
+
+    # Set tool context for mesh tools (including OAuth credentials)
     setup_tool_context({
         "org_id": org_id,
         "user_id": user_id,
         "session_id": session_id,
         "trace_id": trace_id,
         "equipped_abilities": params.get("equipped_abilities", []),
+        "oauth_credentials": oauth_credentials,
     })
 
     logger.info(f"A2A request: method={method}, trace_id={trace_id}")
@@ -231,6 +236,18 @@ async def jsonrpc_handler(request: Request):
                 new_message=text,
             ):
                 events.append(event)
+        except MissingCredentialsError as e:
+            # Return structured error for platform to handle OAuth flow
+            logger.warning(f"Missing credentials: {e.service}")
+            return JSONResponse({
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32001,
+                    "message": str(e),
+                    "data": e.to_platform_response()
+                },
+                "id": request_id,
+            })
         except Exception as e:
             logger.error(f"Agent execution error: {e}")
             return JSONResponse({

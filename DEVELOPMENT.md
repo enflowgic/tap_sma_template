@@ -7,10 +7,11 @@ Detailed documentation for building TAP-compatible agents.
 1. [Architecture Overview](#architecture-overview)
 2. [Agent Definition](#agent-definition)
 3. [Input Schema](#input-schema)
-4. [Mesh Tools](#mesh-tools)
-5. [ADK Callbacks](#adk-callbacks)
-6. [Deployment](#deployment)
-7. [Troubleshooting](#troubleshooting)
+4. [OAuth Credentials](#oauth-credentials)
+5. [Mesh Tools](#mesh-tools)
+6. [ADK Callbacks](#adk-callbacks)
+7. [Deployment](#deployment)
+8. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -145,6 +146,163 @@ json_schema_extra={
     "show_if": {"field": "value"}, # Conditional display
     "required_when": {"field": "value"}, # Conditional requirement
 }
+```
+
+---
+
+## OAuth Credentials
+
+If your agent needs access to third-party APIs (Google Workspace, Salesforce, Slack, etc.), TAP provides a secure credential injection system.
+
+### How It Works
+
+1. **Declare requirements** in your input schema
+2. **Gateway checks** if user has connected the app
+3. **Credentials injected** into your agent's context
+4. **Access in tools** via `get_oauth_credentials()`
+
+### Declaring Credential Requirements
+
+In `agent/input_schema.py`:
+
+```python
+from typing import Optional, Dict, Any
+from pydantic import Field
+from tap_core.schemas.base import BaseInputSchema
+
+
+class AgentInputSchema(BaseInputSchema):
+    task: str = Field(..., description="What task should the agent perform?")
+
+    # Platform-provided OAuth credentials (hidden from user)
+    oauth_credentials: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="OAuth tokens provided by TAP platform",
+        json_schema_extra={
+            "ui_widget": "hidden",
+            "platform_provided": True,
+        }
+    )
+
+    # Declare which credentials your agent needs
+    model_config = {
+        "json_schema_extra": {
+            "required_credentials": {
+                "google": {
+                    "scopes": [
+                        "https://www.googleapis.com/auth/documents.readonly",
+                        "https://www.googleapis.com/auth/drive.readonly"
+                    ],
+                    "reason": "Access Google Docs for document analysis"
+                }
+            }
+        }
+    }
+```
+
+### Accessing Credentials in Tools
+
+```python
+from tap_core.tools import get_oauth_credentials
+from agent.exceptions import MissingCredentialsError
+
+
+def fetch_google_doc(doc_url: str) -> str:
+    """Fetch a Google Doc using platform-provided credentials."""
+
+    # Get credentials from context
+    google_creds = get_oauth_credentials("google")
+
+    if not google_creds:
+        # This triggers the OAuth flow in the frontend
+        raise MissingCredentialsError(
+            service="Google Docs",
+            scopes=["https://www.googleapis.com/auth/documents.readonly"]
+        )
+
+    # Use the token
+    from google.oauth2.credentials import Credentials
+    from googleapiclient.discovery import build
+
+    credentials = Credentials(token=google_creds["access_token"])
+    docs_service = build('docs', 'v1', credentials=credentials)
+
+    # Extract doc ID and fetch...
+    doc_id = extract_doc_id(doc_url)
+    document = docs_service.documents().get(documentId=doc_id).execute()
+
+    return document.get('body', {}).get('content', '')
+```
+
+### Credential Structure
+
+When credentials are available, they have this structure:
+
+```python
+{
+    "access_token": "ya29.xxx...",
+    "token_type": "Bearer",
+    "expires_at": "2025-01-10T12:00:00Z",  # ISO format, may be None
+    "scopes": ["scope1", "scope2"],
+    "provider_email": "user@example.com"   # Email used for OAuth
+}
+```
+
+### Supported Providers
+
+| Provider | Slug | Common Scopes |
+|----------|------|---------------|
+| Google Workspace | `google` | `documents.readonly`, `drive.readonly`, `gmail.readonly` |
+| Salesforce | `salesforce` | `api`, `refresh_token` |
+| Slack | `slack` | `channels:read`, `chat:write` |
+
+### User Experience
+
+When your agent needs credentials the user hasn't connected:
+
+1. Gateway detects missing credentials from your `required_credentials`
+2. Frontend shows a modal with two options:
+   - **Connect Account**: User authorizes your agent (one-time setup)
+   - **One-Time Access**: User pays for single-use via affiliate credentials
+3. After connection, the request is automatically retried
+
+### Error Handling
+
+Always handle missing credentials gracefully:
+
+```python
+from agent.exceptions import MissingCredentialsError
+
+try:
+    result = fetch_google_doc(url)
+except MissingCredentialsError as e:
+    # This propagates to Gateway, which triggers OAuth flow
+    raise
+except Exception as e:
+    # Handle other errors
+    return f"Error accessing document: {e}"
+```
+
+### Testing Without Credentials
+
+For local development, you can mock credentials:
+
+```python
+# In tests or local dev
+from tap_core.tools import set_tool_context
+
+set_tool_context(
+    org_id="test-org",
+    user_id="test-user",
+    session_id="test-session",
+    trace_id="test-trace",
+    oauth_credentials={
+        "google": {
+            "access_token": "test-token",
+            "token_type": "Bearer",
+        }
+    }
+)
 ```
 
 ---
