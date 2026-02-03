@@ -1,0 +1,250 @@
+# =============================================================================
+# SYSTEM MANIFEST - Agent Architecture for TapInitialiserAgent
+# =============================================================================
+# Version: 1.0.0
+# Last Updated: 2025-01-30
+#
+# This manifest enables the TapInitialiserAgent to understand your agent
+# architecture and generate personalized state variables for each sub-agent.
+#
+# FLOW:
+# 1. Gateway sends sma-interaction-preferences (raw user preferences from Cognee)
+# 2. TapInitialiserAgent reads this manifest to understand:
+#    - What agents exist and what they do
+#    - What preferences are relevant to each agent
+#    - The state key to use for each agent's preferences
+# 3. TapInitialiserAgent generates personalized snippets and sets state variables
+# 4. Each agent's prompt uses {state_key} which ADK substitutes from state
+#
+# USAGE IN PROMPTS:
+# Your agent prompts should include placeholders like:
+#
+#   **Current User Preferences:**
+#   {my_agent_user_preferences}
+#
+#   ## Your Task
+#   ...
+# =============================================================================
+
+apiVersion: tap/v1
+kind: SystemManifest
+
+# =============================================================================
+# 1. SYSTEM SECTION
+# =============================================================================
+system:
+  name: "tap-template-agent"
+  version: "1.0.0"
+
+  purpose: |
+    A template agent demonstrating TAP platform integration patterns.
+    Serves as a starting point for developers building new TAP agents.
+
+  value_proposition: |
+    - Demonstrates input validation with clarifying questions
+    - Shows personalization via TapInitialiserAgent
+    - Integrates mesh tools for platform capabilities
+    - Provides streaming responses via SSE
+
+  target_users:
+    - TAP platform developers
+    - Agent builders
+
+  reasoning_context: |
+    This template exists to provide a reference implementation for
+    building TAP-compatible agents. It demonstrates the minimum viable
+    setup while being extensible for complex workflows.
+
+
+# =============================================================================
+# 2. ARCHITECTURE SECTION
+# =============================================================================
+architecture:
+  cognitive_model: "Simple LLM Agent with Validation Pipeline"
+
+  workflow_phases:
+    - phase_id: 1
+      name: "Initialization"
+      agent: "TapInitialiserAgent"
+      agent_type: "LlmAgent"
+      description: |
+        Sets up personalized context for all downstream agents based on
+        user preferences from Cognee. Reads this manifest and generates
+        appropriate state variables.
+      outputs_to_state:
+        - "*_user_preferences (per-agent preference snippets)"
+        - "ltm_summary (long-term memory context)"
+      reasoning_context: |
+        This agent runs FIRST because downstream agents need their
+        personalized preferences in state before they execute.
+
+    - phase_id: 2
+      name: "Validation"
+      agent: "InputValidator"
+      agent_type: "LlmAgent"
+      description: |
+        Validates required input fields. Uses input_validator_user_preferences
+        to adjust tone and language when asking clarifying questions.
+      outputs_to_state:
+        - "validated_input"
+
+    - phase_id: 3
+      name: "Execution"
+      agent: "MyAgent"
+      agent_type: "LlmAgent"
+      description: |
+        Main agent that processes validated input and generates responses.
+        Uses my_agent_user_preferences for personalized behavior.
+      outputs_to_state:
+        - "response"
+
+
+# =============================================================================
+# 3. STATE SCHEMA SECTION
+# =============================================================================
+# Defines state variables that TapInitialiserAgent should set.
+# Each key under per_agent_preferences becomes a state variable.
+#
+# The naming convention is: {agent_name}_user_preferences
+# This matches real-world SMA implementations like Proof-Reader.
+
+state_schema:
+  global_preferences:
+    # These are set by Gateway, not by TapInitialiserAgent
+    style_guide:
+      type: "string"
+      description: "Regional style preference (if applicable)"
+      wrapper_guidance: "Set by Gateway based on user/org settings"
+
+  per_agent_preferences:
+    # TapInitialiserAgent generates these based on sma-interaction-preferences
+
+    input_validator_user_preferences:
+      domain: "Input validation and clarifying questions"
+      description: |
+        Preferences for how the InputValidator asks clarifying questions.
+        Affects tone, language, and verbosity of validation prompts.
+      example_feedback: |
+        "Ask questions in a friendly, casual tone. Keep it brief.
+        If I say 'just do it', don't ask for more details."
+      wrapper_guidance: |
+        TapInitialiserAgent should extract:
+        - Tone preferences (formal, casual, friendly)
+        - Language preferences (if multilingual)
+        - Verbosity preferences (concise vs detailed)
+        - Patience level (thorough vs quick)
+
+    my_agent_user_preferences:
+      domain: "Main agent response generation"
+      description: |
+        Preferences for how the main agent generates responses.
+        Affects tone, detail level, formatting, and communication style.
+      example_feedback: |
+        "I prefer detailed technical explanations. Use code examples
+        when relevant. Don't oversimplify - I'm an expert."
+      wrapper_guidance: |
+        TapInitialiserAgent should extract:
+        - Technical level (beginner, intermediate, expert)
+        - Response format (bullet points, paragraphs, code-focused)
+        - Tone (professional, casual, academic)
+        - Verbosity (concise vs comprehensive)
+        - Domain-specific preferences
+
+
+# =============================================================================
+# 4. PERSONALIZATION CONFIGURATION
+# =============================================================================
+personalization:
+  enabled: true
+
+  # State key where Gateway passes raw SMA interaction preferences
+  # TapInitialiserAgent reads this and generates per-agent preferences
+  user_preferences_key: "sma_interaction_preferences"
+
+  # Fallback text if TapInitialiserAgent cannot generate preferences
+  fallback_snippet: "No specific preferences provided. Use professional, helpful defaults."
+
+  # Enable debug logging for personalization decisions
+  debug_logging: false
+
+
+# =============================================================================
+# 5. INTEGRATION PROTOCOL
+# =============================================================================
+integration:
+  invocation_sequence:
+    - step: 1
+      action: "Gateway sends sma-interaction-preferences in context"
+      timing: "Before agent execution"
+      keys_to_set:
+        - "sma_interaction_preferences (raw from Cognee)"
+        - "ltm (long-term memory entries)"
+
+    - step: 2
+      action: "TapInitialiserAgent processes preferences"
+      timing: "First agent in pipeline"
+      keys_to_set:
+        - "input_validator_user_preferences"
+        - "my_agent_user_preferences"
+        - "ltm_summary"
+
+    - step: 3
+      action: "InputValidator uses personalized prompts"
+      timing: "Second agent in pipeline"
+      reads_from_state:
+        - "input_validator_user_preferences"
+
+    - step: 4
+      action: "MyAgent uses personalized prompts"
+      timing: "Third agent in pipeline"
+      reads_from_state:
+        - "my_agent_user_preferences"
+        - "ltm_summary"
+
+
+# =============================================================================
+# EXAMPLE: COMPLEX MULTI-AGENT SYSTEM (like Proof-Reader)
+# =============================================================================
+# For complex systems with many agents, you would define more per_agent_preferences:
+#
+# state_schema:
+#   per_agent_preferences:
+#     initialization_user_preferences:
+#       domain: "Document fetching, CSV import, style guide extraction"
+#       description: "Preferences for how InitializationAgent handles documents"
+#       example_feedback: |
+#         "Always wait for my confirmation before proceeding with full workflow.
+#         If CSV import fails, summarize the error clearly."
+#       wrapper_guidance: |
+#         Accumulate feedback about: CSV import issues, style guide detection,
+#         document access problems, unexpected workflow paths.
+#
+#     mechanic_user_preferences:
+#       domain: "Grammar, spelling, punctuation, typography"
+#       description: "Preferences for grammar/spelling correction behavior"
+#       example_feedback: |
+#         "Don't flag sentence fragments in dialogue. Be more lenient with
+#         comma usage in informal sections. Always flag em-dash issues."
+#       wrapper_guidance: |
+#         Track patterns: Does user frequently reject fragment corrections?
+#         Do they prefer certain typography styles? Are they strict or lenient?
+#
+#     localizer_user_preferences:
+#       domain: "Regional spelling and style conversion"
+#       description: "Preferences for USA ↔ Australian conversion"
+#       example_feedback: |
+#         "Never change 'color' in quoted text. Be aggressive with -ize to -ise
+#         conversions. Skip proper noun detection for simple words."
+#       wrapper_guidance: |
+#         Track: Quote handling preferences, which word classes to prioritize,
+#         tolerance for false positives vs false negatives.
+#
+#     senior_editor_user_preferences:
+#       domain: "Edit verification and context-aware review"
+#       description: "Preferences for Senior Editor approval/rejection decisions"
+#       example_feedback: |
+#         "Be more conservative - reject edits when uncertain. Always check
+#         two paragraphs of context for proper nouns."
+#
+# Each of these becomes a state variable that TapInitialiserAgent populates
+# based on the raw user preferences from Gateway.

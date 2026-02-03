@@ -1,39 +1,51 @@
 """
-TAP Template Agent - Agent Package
+TAP Template Agent - Your Agent Code
 
-This package contains your agent definition, schemas, tools, and configuration.
+This package contains your agent implementation.
 
-Exports:
-- root_agent: The main agent runnable (LlmAgent)
-- AGENT_CARD: A2A Agent Card for discovery
-- AgentInputSchema: Input contract
-- AgentOutputSchema: Output contract
-- SYSTEM_PROMPT: System prompt configuration
+Files you'll work with:
+- agent.py    - Your LlmAgent definition
+- tools/      - Your custom tools (directory)
+- schemas.py  - Input/output contracts
+- prompts.py  - Agent description & instructions
+
+TAP platform integration (mesh tools, validation, A2A) is handled
+automatically by tap_wrapper/ - you don't need to modify that code.
 """
 
-from .definition import (
-    root_agent,
-    AGENT_RUNNABLE,
-    AGENT_NAME,
-    AGENT_METADATA,
-)
-from .agent_card import AGENT_CARD
-from .input_schema import AgentInputSchema
-from .output_schema import AgentOutputSchema
-from .prompts import SYSTEM_PROMPT, PROMPTS
+from .agent import agent
+from .schemas import AgentInputSchema, AgentOutputSchema
+from .tools import custom_tools
 
+# Developer-defined prompts
+from .prompts import AGENT_DESCRIPTION, AGENT_CAPABILITIES, AGENT_INSTRUCTIONS
+
+# Composed prompts (backward compatible) - from tap_wrapper
+from tap_wrapper.prompts import get_system_prompt_dict as _get_system_prompt_dict
+from tap_wrapper.prompts import get_prompts as _get_prompts
+
+SYSTEM_PROMPT = _get_system_prompt_dict()
+PROMPTS = _get_prompts()
+
+
+# Main exports for tap_wrapper and runtime
 __all__ = [
-    # Agent
-    "root_agent",
-    "AGENT_RUNNABLE",
-    "AGENT_NAME",
-    "AGENT_METADATA",
-    # A2A
-    "AGENT_CARD",
+    # Your agent
+    "agent",
+
     # Schemas
     "AgentInputSchema",
     "AgentOutputSchema",
-    # Prompts
+
+    # Tools (for reference)
+    "custom_tools",
+
+    # Developer prompts (for customization)
+    "AGENT_DESCRIPTION",
+    "AGENT_CAPABILITIES",
+    "AGENT_INSTRUCTIONS",
+
+    # Composed prompts (backward compatible)
     "SYSTEM_PROMPT",
     "PROMPTS",
 ]

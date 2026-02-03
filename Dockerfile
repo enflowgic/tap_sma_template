@@ -1,12 +1,12 @@
 # =============================================================================
-# TAP AGENT DOCKERFILE
+# TAP AGENT DOCKERFILE - Cloud Run Deployment
 # =============================================================================
 #
-# This Dockerfile is used for Cloud Run deployments.
-# For Vertex AI deployments, the platform handles containerization automatically.
+# SMAs deploy to Cloud Run because they expose A2A protocol endpoints
+# (agent card, sync RPC, streaming, health checks).
 #
-# Build: docker build -t my-agent .
-# Run:   docker run -p 8080:8080 my-agent
+# Build: docker build -t tap-template-agent .
+# Run:   docker run -p 8080:8080 -e GOOGLE_CLOUD_PROJECT=your-project tap-template-agent
 #
 # =============================================================================
 
@@ -22,17 +22,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for layer caching
-COPY tap-my-agent/requirements.txt ./requirements.txt
+COPY runtime/requirements.txt ./requirements.txt
 
 # Install Python dependencies
+# Note: tap-core requires Artifact Registry access - configure pip.conf if needed
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the agent package
-COPY my_agent/ ./my_agent/
+# Copy the agent package (your agent definition, schemas, tools)
+COPY agent/ ./agent/
 
-# Copy the TAP wrapper
-COPY tap-my-agent/app/ ./app/
-COPY tap-my-agent/main.py ./main.py
+# Copy the runtime (A2A server and utilities)
+COPY runtime/ ./runtime/
+
+# Copy root-level entry point
+COPY main.py ./main.py
 
 # Copy configuration files
 COPY tap-agent.yaml ./tap-agent.yaml
@@ -41,6 +44,7 @@ COPY tap-agent.yaml ./tap-agent.yaml
 ENV PORT=8080
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV GOOGLE_GENAI_USE_VERTEXAI=true
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
@@ -49,6 +53,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # Expose port
 EXPOSE ${PORT}
 
-# Run the application
-# For Cloud Run, use gunicorn with uvicorn workers
+# Run the A2A server
 CMD ["python", "main.py"]

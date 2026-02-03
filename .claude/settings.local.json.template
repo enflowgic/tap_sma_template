@@ -1,0 +1,30 @@
+{
+  "// INSTRUCTIONS": "Copy this file to settings.local.json and customize for your agent development",
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(pip show:*)",
+      "Bash(curl:*)",
+      "Bash(gcloud auth:*)",
+      "Bash(gcloud run:*)",
+      "Bash(docker:*)"
+    ],
+    "deny": []
+  },
+  "// SKILLS_NOTE": "These skills provide TAP platform context for Claude Code",
+  "skills": {
+    "template-agent": {
+      "description": "TAP Template Agent patterns and ADK integration",
+      "path": ".claude/skills/template-agent/SKILL.md"
+    },
+    "universal-tools": {
+      "description": "TAP mesh tools reference (12 tools)",
+      "note": "Load from main TAP repo: Agent Platform Application/.claude/skills/universal-tools"
+    },
+    "gateway": {
+      "description": "Gateway service integration patterns",
+      "note": "Load from main TAP repo: Agent Platform Application/.claude/skills/gateway"
+    }
+  }
+}

@@ -238,7 +238,7 @@ jobs:
       id-token: write
 
     outputs:
-      resource_name: ${{ steps.deploy.outputs.resource_name }}
+      cloud_run_url: ${{ steps.deploy.outputs.cloud_run_url }}
       endpoint_url: ${{ steps.deploy.outputs.endpoint_url }}
 
     steps:
@@ -263,24 +263,37 @@ jobs:
         run: |
           pip install google-cloud-aiplatform pyyaml
 
-      - name: Deploy to Vertex AI
+      - name: Deploy to Cloud Run
         id: deploy
         run: |
-          cd ${{ env.RUNTIME_DIR }}
-          python deploy_vertex.py 2>&1 | tee deploy.log
+          # Deploy to Cloud Run (SMAs require web server for A2A protocol endpoints)
+          gcloud run deploy ${{ env.AGENT_SLUG }} \
+            --source . \
+            --project ${{ secrets.GCP_PROJECT_ID }} \
+            --region ${{ env.GCP_REGION }} \
+            --allow-unauthenticated \
+            --memory 2Gi \
+            --cpu 2 \
+            --timeout 300s \
+            --min-instances 0 \
+            --max-instances 10 \
+            --set-env-vars "GOOGLE_CLOUD_PROJECT=${{ secrets.GCP_PROJECT_ID }},GOOGLE_GENAI_USE_VERTEXAI=true"
 
-          # Extract resource name from output
-          RESOURCE_NAME=$(grep -oP 'resource_name:\s*\K.*' deploy.log || echo "")
-          echo "resource_name=${RESOURCE_NAME}" >> $GITHUB_OUTPUT
+          # Get the Cloud Run service URL
+          SERVICE_URL=$(gcloud run services describe ${{ env.AGENT_SLUG }} \
+            --project ${{ secrets.GCP_PROJECT_ID }} \
+            --region ${{ env.GCP_REGION }} \
+            --format "value(status.url)")
 
-          if [ -z "$RESOURCE_NAME" ]; then
-            echo "ERROR: Could not extract resource name from deployment"
+          echo "cloud_run_url=${SERVICE_URL}" >> $GITHUB_OUTPUT
+          echo "endpoint_url=${SERVICE_URL}" >> $GITHUB_OUTPUT
+
+          if [ -z "$SERVICE_URL" ]; then
+            echo "ERROR: Could not get Cloud Run service URL"
             exit 1
           fi
-        env:
-          GOOGLE_CLOUD_PROJECT: ${{ secrets.GCP_PROJECT_ID }}
-          GOOGLE_CLOUD_LOCATION: ${{ env.GCP_REGION }}
-          STAGING_BUCKET: ${{ secrets.GCP_STAGING_BUCKET }}
+
+          echo "Deployed to: ${SERVICE_URL}"
 
   # ===========================================================================
   # REGISTER
@@ -311,8 +324,14 @@ jobs:
 
       - name: Register agent
         run: |
-          python register_agent.py \
-            --vertex-resource-name "${{ needs.deploy.outputs.resource_name }}"
+          python register_agent.py register \
+            --cloud-run-url "${{ needs.deploy.outputs.cloud_run_url }}" \
+            --owner-org-id "${{ secrets.TAP_OWNER_ORG_ID }}" \
+            --owner-user-id "${{ secrets.TAP_OWNER_USER_ID }}" \
+            --input-cogs 0 \
+            --input-margin 10000 \
+            --output-cogs 0 \
+            --output-margin 12000
         env:
           COGNEE_REGISTRY_URL: ${{ secrets.COGNEE_REGISTRY_URL }}
           GOOGLE_CLOUD_PROJECT: ${{ secrets.GCP_PROJECT_ID }}
@@ -331,7 +350,7 @@ jobs:
               Your agent has been successfully deployed and registered!
 
               - **Agent Slug:** \`${{ env.AGENT_SLUG }}\`
-              - **Resource:** \`${{ needs.deploy.outputs.resource_name }}\`
+              - **Cloud Run URL:** \`${{ needs.deploy.outputs.cloud_run_url }}\`
               - **Environment:** ${{ inputs.environment || 'staging' }}
 
               Test your agent in the [TAP Control Plane](https://tap.tailoredagents.ai).
@@ -350,17 +369,19 @@ jobs:
 #
 # GCP_SERVICE_ACCOUNT:
 #   Format: service-account@project.iam.gserviceaccount.com
-#   Service account with permissions to deploy to Vertex AI
+#   Service account with permissions to deploy to Cloud Run
 #
 # GCP_PROJECT_ID:
 #   Your Google Cloud project ID
 #
-# GCP_STAGING_BUCKET:
-#   Format: gs://your-bucket-name
-#   Bucket for Vertex AI staging
-#
 # COGNEE_REGISTRY_URL:
 #   URL of the Cognee Registry service
 #   Default: https://tap-cognee-registry-xxx.run.app
+#
+# TAP_OWNER_ORG_ID:
+#   Your TAP organization UUID (required for billing)
+#
+# TAP_OWNER_USER_ID:
+#   Your TAP user UUID (required for audit trail)
 #
 # =============================================================================

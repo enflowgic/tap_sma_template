@@ -48,19 +48,23 @@ async def on_agent_start(ctx: CallbackContext) -> None:
     Args:
         ctx: Callback context with session and state access
     """
-    agent_name = getattr(ctx, 'agent_name', 'unknown')
-    invocation_id = getattr(ctx, 'invocation_id', 'unknown')
+    try:
+        agent_name = getattr(ctx, 'agent_name', 'unknown')
+        invocation_id = getattr(ctx, 'invocation_id', 'unknown')
 
-    logger.info(
-        f"Agent starting",
-        extra={
-            "agent_name": agent_name,
-            "invocation_id": invocation_id,
-        }
-    )
+        logger.info(
+            f"Agent starting",
+            extra={
+                "agent_name": agent_name,
+                "invocation_id": invocation_id,
+            }
+        )
 
-    # Store start time for duration calculation
-    ctx.state["_start_time"] = time.time()
+        # Store start time for duration calculation
+        ctx.state["_start_time"] = time.time()
+    except Exception as e:
+        # Log but don't re-raise - let agent continue
+        logger.warning(f"on_agent_start callback error (non-fatal): {e}")
 
 
 async def on_agent_end(ctx: CallbackContext, output: Any) -> None:
@@ -77,21 +81,25 @@ async def on_agent_end(ctx: CallbackContext, output: Any) -> None:
         ctx: Callback context
         output: Agent's output
     """
-    agent_name = getattr(ctx, 'agent_name', 'unknown')
-    invocation_id = getattr(ctx, 'invocation_id', 'unknown')
+    try:
+        agent_name = getattr(ctx, 'agent_name', 'unknown')
+        invocation_id = getattr(ctx, 'invocation_id', 'unknown')
 
-    # Calculate duration
-    start_time = ctx.state.get("_start_time")
-    duration_ms = (time.time() - start_time) * 1000 if start_time else 0
+        # Calculate duration
+        start_time = ctx.state.get("_start_time")
+        duration_ms = (time.time() - start_time) * 1000 if start_time else 0
 
-    logger.info(
-        f"Agent completed",
-        extra={
-            "agent_name": agent_name,
-            "invocation_id": invocation_id,
-            "duration_ms": duration_ms,
-        }
-    )
+        logger.info(
+            f"Agent completed",
+            extra={
+                "agent_name": agent_name,
+                "invocation_id": invocation_id,
+                "duration_ms": duration_ms,
+            }
+        )
+    except Exception as e:
+        # Log but don't re-raise - let agent continue
+        logger.warning(f"on_agent_end callback error (non-fatal): {e}")
 
 
 # =============================================================================
@@ -120,13 +128,18 @@ async def on_tool_start(
     Returns:
         None to continue execution, or a value to skip execution
     """
-    logger.debug(f"Tool call: {tool_name}", extra={"args": args})
+    try:
+        logger.debug(f"Tool call: {tool_name}", extra={"args": args})
 
-    # Example: Block dangerous operations
-    # if tool_name == "delete_file" and not ctx.state.get("deletion_approved"):
-    #     return {"error": "Deletion not approved"}
+        # Example: Block dangerous operations
+        # if tool_name == "delete_file" and not ctx.state.get("deletion_approved"):
+        #     return {"error": "Deletion not approved"}
 
-    return None  # Continue with normal execution
+        return None  # Continue with normal execution
+    except Exception as e:
+        # Log but don't block tool execution
+        logger.warning(f"on_tool_start callback error (non-fatal): {e}")
+        return None
 
 
 async def on_tool_end(
@@ -148,7 +161,11 @@ async def on_tool_end(
         tool_name: Name of the tool that was called
         result: Result returned by the tool
     """
-    logger.debug(f"Tool result: {tool_name}", extra={"result_type": type(result).__name__})
+    try:
+        logger.debug(f"Tool result: {tool_name}", extra={"result_type": type(result).__name__})
+    except Exception as e:
+        # Log but don't re-raise
+        logger.warning(f"on_tool_end callback error (non-fatal): {e}")
 
 
 # =============================================================================
@@ -171,7 +188,14 @@ async def on_model_request(ctx: CallbackContext, request: Any) -> Optional[Any]:
     Returns:
         None to continue, or modified request
     """
-    return None
+    try:
+        # Add your pre-LLM logic here
+        # Example: Log token estimates, modify prompts, etc.
+        return None
+    except Exception as e:
+        # Log but don't block LLM request
+        logger.warning(f"on_model_request callback error (non-fatal): {e}")
+        return None
 
 
 async def on_model_response(ctx: CallbackContext, response: Any) -> None:
@@ -187,7 +211,13 @@ async def on_model_response(ctx: CallbackContext, response: Any) -> None:
         ctx: Callback context
         response: LLM response
     """
-    pass
+    try:
+        # Add your post-LLM logic here
+        # Example: Content filtering, token counting, etc.
+        pass
+    except Exception as e:
+        # Log but don't re-raise
+        logger.warning(f"on_model_response callback error (non-fatal): {e}")
 
 
 __all__ = [

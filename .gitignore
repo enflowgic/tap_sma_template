@@ -59,6 +59,15 @@ htmlcov/
 # TAP-specific
 # pip.conf contains private registry URLs - use pip.conf.example as template
 runtime/pip.conf
+deploy/pip.conf
 
-# Claude Code skills directory (not part of template distribution)
-.claude/
+# Claude Code local settings (keep skills for developers)
+.claude/settings.local.json
+.claude/settings.json
+
+# Large reference repositories in template-agent (clone separately if needed)
+# See .claude/skills/template-agent/SKILL.md for links
+.claude/skills/template-agent/adk-docs/
+.claude/skills/template-agent/adk-python/
+.claude/skills/template-agent/adk-samples/
+.claude/skills/template-agent/agent-starter-pack/

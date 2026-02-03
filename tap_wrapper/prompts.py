@@ -1,0 +1,572 @@
+"""
+TAP Wrapper - Platform Prompt Templates
+
+This module provides the TAP platform boilerplate that gets combined with
+developer-defined prompts. Developers should NOT modify this file.
+
+=============================================================================
+PROMPT COMPOSITION
+=============================================================================
+
+The final system prompt is composed of:
+    1. Developer's agent description (from agent/prompts.py)
+    2. Platform preamble (mesh tools, capabilities)
+    3. User preferences section (automatic - uses state variable from manifest)
+    4. Developer's agent capabilities (optional)
+    5. Developer's agent instructions (optional)
+    6. Platform footer (return behavior rules)
+
+=============================================================================
+USER PREFERENCES INJECTION
+=============================================================================
+
+This module automatically injects user preferences placeholders into prompts.
+TapInitialiserAgent populates these state variables at runtime based on
+Cognee LTM feedback, and ADK substitutes them into the prompt.
+
+For MAIN AGENT:
+    compose_system_prompt() automatically adds {my_agent_user_preferences}
+
+For SUB-AGENTS (multi-agent workflows):
+    Use compose_sub_agent_prompt() which derives the key from agent name:
+    - agent_name="researcher" → {researcher_user_preferences}
+    - agent_name="scorer" → {scorer_user_preferences}
+
+The preference keys MUST match entries in system-manifest.yaml:
+    state_schema:
+      per_agent_preferences:
+        my_agent_user_preferences: ...
+        researcher_user_preferences: ...
+        scorer_user_preferences: ...
+
+=============================================================================
+USAGE
+=============================================================================
+
+Main agent (automatic):
+    from tap_wrapper.prompts import compose_system_prompt
+
+    # Uses {my_agent_user_preferences} automatically
+    system_prompt = compose_system_prompt()
+
+Sub-agents (multi-agent workflows):
+    from tap_wrapper.prompts import compose_sub_agent_prompt
+
+    researcher_prompt = compose_sub_agent_prompt(
+        agent_name="researcher",
+        description="You research AI tools.",
+        instructions="Focus on the user's industry.",
+    )
+    # Automatically uses {researcher_user_preferences}
+
+Debugging:
+    from tap_wrapper.prompts import get_all_preference_keys_from_manifest
+
+    keys = get_all_preference_keys_from_manifest()
+    print(f"Defined preference keys: {keys}")
+"""
+
+import importlib
+import logging
+import os
+import re
+import warnings
+from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+
+def normalize_preference_key(agent_name: str) -> str:
+    """
+    Normalize agent name to preference key format.
+
+    Handles various input formats and produces consistent snake_case output:
+    - "AI-Researcher" → "ai_researcher"
+    - "AI Researcher" → "ai_researcher"
+    - "ai_researcher" → "ai_researcher"
+    - "QueryOptimizer" → "queryoptimizer"
+
+    Args:
+        agent_name: The agent name to normalize
+
+    Returns:
+        Normalized preference key (lowercase, underscore-separated)
+    """
+    # Remove non-alphanumeric except spaces, hyphens, underscores
+    cleaned = re.sub(r'[^a-zA-Z0-9\s\-_]', '', agent_name)
+    # Convert to lowercase and replace separators with underscore
+    normalized = re.sub(r'[\s\-]+', '_', cleaned.lower())
+    # Remove consecutive underscores
+    normalized = re.sub(r'_+', '_', normalized)
+    return normalized.strip('_')
+
+
+# =============================================================================
+# PLATFORM BOILERPLATE (Developers should not need to know this)
+# =============================================================================
+
+PLATFORM_PREAMBLE = """
+## TAP Mesh Tools
+
+You have access to the TAP agent mesh tools:
+
+| Tool | Purpose |
+|------|---------|
+| `agent_lookup` | Search for specialist agents by capability |
+| `transfer_to_agent` | Delegate work to another agent |
+| `transfer_back_to_parent` | Return your results to whoever called you |
+| `ask_clarifying_questions` | Gather information from the user |
+| `ask_user_permission` | Request approval for sensitive actions |
+| `request_input` | Collect structured data via a form |
+| `set_needs_attention` | Signal that you need user direction |
+| `notify_user` | Send a progress notification |
+
+You also have your custom tools as defined in your agent.
+""".strip()
+
+
+# =============================================================================
+# USER PREFERENCES BOILERPLATE (Automatic - developers don't need to add this)
+# =============================================================================
+# This section is automatically included in all agent prompts. The state variable
+# placeholder (e.g., {my_agent_user_preferences}) is substituted by ADK at runtime
+# with the personalized snippet generated by TapInitialiserAgent.
+
+USER_PREFERENCES_TEMPLATE = """
+## History and Feedback Based User Preferences
+
+**IMPORTANT:** This section contains dynamically-loaded user preferences based on
+the user's past behavior and feedback from previous sessions. The TAP platform
+automatically populates this section at runtime via the TapInitialiserAgent.
+
+**How this works:**
+- After each session, users can provide feedback on your decisions
+- This feedback is summarized and stored in the platform's Cognee knowledge graph
+- When you are invoked, TapInitialiserAgent processes these preferences
+- The personalized guidance is injected into this section via state variable substitution
+- You should treat this feedback as **high-priority guidance** that overrides default behavior
+
+**What to do with this feedback:**
+- If feedback says "stop doing X" → Do not do X, even if your default behavior would
+- If feedback says "always do Y" → Prioritize Y over conflicting guidance
+- If feedback notes past mistakes → Actively avoid repeating those patterns
+- If no feedback is provided → Use your default professional judgment
+
+**Current User Preferences:**
+{preferences_key}
+""".strip()
+
+# Default state key for main agent preferences (matches template manifest)
+# Configurable via TAP_DEFAULT_PREFERENCES_KEY environment variable
+DEFAULT_PREFERENCES_KEY = os.environ.get(
+    "TAP_DEFAULT_PREFERENCES_KEY",
+    "my_agent_user_preferences"
+)
+
+
+PLATFORM_FOOTER = """
+## Returning Results (IMPORTANT)
+
+When you complete your task, you MUST call `transfer_back_to_parent()` to return results:
+
+```python
+transfer_back_to_parent(
+    result="Summary of what you accomplished",
+    success=True,
+    data={"key": "structured data for caller"},
+    confidence=0.9
+)
+```
+
+**Do NOT use `set_complete()`** - that signals completion to the USER interface.
+Use `transfer_back_to_parent()` to return control to your calling agent.
+""".strip()
+
+
+# =============================================================================
+# CONTEXT INJECTION (LEGACY - NOT USED BY SMAs)
+# =============================================================================
+# NOTE: This template is DEPRECATED and not used by SMA runtime.
+# SMAs do NOT inject context via system prompt templates. Instead:
+#
+# 1. HISTORY: Gateway sends history in params.context. server.py injects it
+#    into the USER MESSAGE (not system prompt) before sending to ADK.
+#
+# 2. LTM: Gateway sends ltm in params.context. server.py puts it into session
+#    state. TapInitialiserAgent processes it and outputs ltm_summary.
+#
+# 3. SMA INTERACTION PREFERENCES: Gateway sends sma_interaction_preferences
+#    (fetched from Cognee's /sma-interaction-preferences endpoint).
+#    server.py converts List[Dict] to text and stores in session state.
+#    TapInitialiserAgent generates personalized snippets like {my_agent_user_preferences}.
+#
+# For SMAs, context flows through Gateway → server.py → session state,
+# NOT through system prompt templates.
+
+CONTEXT_INJECTION_TEMPLATE = """
+## Previous Conversation
+{history}
+
+## Relevant Context
+{ltm_retrieval}
+""".strip()
+# ^^^ DEPRECATED: Not used by SMA runtime. Kept for backward compatibility.
+
+
+# =============================================================================
+# MANIFEST INTEGRATION
+# =============================================================================
+
+def _get_main_agent_preferences_key() -> str:
+    """
+    Get the preferences state key for the main developer agent from manifest.
+
+    Reads state_schema.per_agent_preferences and returns the first key that
+    is NOT for the input_validator (which has its own key).
+
+    Falls back to DEFAULT_PREFERENCES_KEY if manifest not found or empty.
+    """
+    try:
+        from .manifest import load_system_manifest
+
+        manifest = load_system_manifest()
+        per_agent_prefs = manifest.state_schema.per_agent_preferences
+
+        if not per_agent_prefs:
+            return DEFAULT_PREFERENCES_KEY
+
+        # Find the main agent's key (not input_validator)
+        for key in per_agent_prefs.keys():
+            if "input_validator" not in key.lower():
+                return key
+
+        # If all keys are for input_validator, use the first one
+        return next(iter(per_agent_prefs.keys()), DEFAULT_PREFERENCES_KEY)
+
+    except Exception as e:
+        logger.debug(f"Could not load preferences key from manifest: {e}")
+        return DEFAULT_PREFERENCES_KEY
+
+
+def _build_user_preferences_section(preferences_key: Optional[str] = None) -> str:
+    """
+    Build the user preferences section with the appropriate state key placeholder.
+
+    Args:
+        preferences_key: Override for the state key (defaults to manifest or DEFAULT_PREFERENCES_KEY)
+
+    Returns:
+        User preferences section with state variable placeholder
+    """
+    if preferences_key is None:
+        preferences_key = _get_main_agent_preferences_key()
+
+    # Replace the placeholder with the actual state key wrapped in braces
+    # Use {key?} syntax (with ?) to make the key optional - prevents errors if state key doesn't exist
+    # This is important because TapInitialiserAgent might not run (e.g., personalization disabled)
+    return USER_PREFERENCES_TEMPLATE.replace("{preferences_key}", "{" + preferences_key + "?}")
+
+
+# =============================================================================
+# PROMPT COMPOSITION
+# =============================================================================
+
+def _load_developer_prompts() -> Dict[str, Any]:
+    """
+    Load developer-defined prompts from agent/prompts.py.
+
+    Returns dict with keys: AGENT_DESCRIPTION, AGENT_CAPABILITIES, AGENT_INSTRUCTIONS
+    All are optional except AGENT_DESCRIPTION.
+    """
+    try:
+        # Try to import from the agent package
+        agent_prompts = importlib.import_module("agent.prompts")
+
+        return {
+            "description": getattr(agent_prompts, "AGENT_DESCRIPTION", "You are a helpful assistant."),
+            "capabilities": getattr(agent_prompts, "AGENT_CAPABILITIES", None),
+            "instructions": getattr(agent_prompts, "AGENT_INSTRUCTIONS", None),
+            # Legacy support: if developer still uses old format
+            "legacy_system_prompt": getattr(agent_prompts, "SYSTEM_PROMPT", None),
+        }
+    except ImportError as e:
+        logger.warning(f"Could not import agent.prompts: {e}. Using defaults.")
+        return {
+            "description": "You are a helpful assistant.",
+            "capabilities": None,
+            "instructions": None,
+            "legacy_system_prompt": None,
+        }
+
+
+def compose_system_prompt(
+    agent_description: Optional[str] = None,
+    agent_capabilities: Optional[str] = None,
+    agent_instructions: Optional[str] = None,
+    include_platform_preamble: bool = True,
+    include_platform_footer: bool = True,
+    include_user_preferences: bool = True,
+    user_preferences_key: Optional[str] = None,
+) -> str:
+    """
+    Compose the final system prompt by combining developer content with platform boilerplate.
+
+    Args:
+        agent_description: Override for agent description (defaults to agent/prompts.py)
+        agent_capabilities: Override for capabilities section
+        agent_instructions: Override for instructions section
+        include_platform_preamble: Include mesh tools documentation
+        include_platform_footer: Include return behavior rules
+        include_user_preferences: Include user preferences section (automatic personalization)
+        user_preferences_key: Override for state key (defaults to manifest or 'my_agent_user_preferences')
+
+    Returns:
+        Complete system prompt string
+    """
+    # Load developer prompts if not overridden
+    dev_prompts = _load_developer_prompts()
+
+    # Check for legacy format first
+    if dev_prompts.get("legacy_system_prompt") and isinstance(dev_prompts["legacy_system_prompt"], dict):
+        # Developer is using old SYSTEM_PROMPT dict format - use as-is for backwards compat
+        legacy = dev_prompts["legacy_system_prompt"]
+        if "content" in legacy:
+            logger.info("Using legacy SYSTEM_PROMPT format from agent/prompts.py")
+            return legacy["content"]
+
+    # Use provided values or fall back to loaded developer prompts
+    description = agent_description or dev_prompts.get("description", "You are a helpful assistant.")
+    capabilities = agent_capabilities or dev_prompts.get("capabilities")
+    instructions = agent_instructions or dev_prompts.get("instructions")
+
+    # Build the prompt sections
+    sections = []
+
+    # 1. Agent description (always first)
+    sections.append(description.strip())
+
+    # 2. Platform preamble (mesh tools)
+    if include_platform_preamble:
+        sections.append(PLATFORM_PREAMBLE)
+
+    # 3. User preferences section (automatic personalization via TapInitialiserAgent)
+    if include_user_preferences:
+        sections.append(_build_user_preferences_section(user_preferences_key))
+
+    # 4. Developer capabilities (if provided)
+    if capabilities:
+        sections.append(f"## Your Capabilities\n\n{capabilities.strip()}")
+
+    # 5. Developer instructions (if provided)
+    if instructions:
+        sections.append(f"## Instructions\n\n{instructions.strip()}")
+
+    # 6. Platform footer (return behavior)
+    if include_platform_footer:
+        sections.append(PLATFORM_FOOTER)
+
+    return "\n\n".join(sections)
+
+
+# =============================================================================
+# SUB-AGENT PROMPT HELPERS
+# =============================================================================
+
+def compose_sub_agent_prompt(
+    agent_name: str,
+    description: str,
+    instructions: Optional[str] = None,
+    capabilities: Optional[str] = None,
+    include_platform_preamble: bool = False,
+    include_platform_footer: bool = True,
+) -> str:
+    """
+    Compose a system prompt for a sub-agent with automatic user preferences injection.
+
+    This is a CONVENIENCE FUNCTION for multi-agent workflows. It automatically:
+    1. Derives the preferences key from agent_name: "{agent_name}_user_preferences"
+    2. Adds the user preferences section with the correct state variable placeholder
+    3. Includes platform footer (transfer_back_to_parent reminder)
+
+    The preferences key MUST match an entry in system-manifest.yaml:
+    ```yaml
+    state_schema:
+      per_agent_preferences:
+        researcher_user_preferences:  # ← Must match derived key
+          description: "Preferences for researcher"
+    ```
+
+    TapInitialiserAgent will populate state["researcher_user_preferences"] with
+    personalized guidance, and ADK will substitute it into the prompt.
+
+    Args:
+        agent_name: Name of the sub-agent (used to derive preferences key)
+                    Example: "researcher" → uses "{researcher_user_preferences}"
+        description: What this sub-agent does (first section of prompt)
+        instructions: Specific instructions for this agent (optional)
+        capabilities: Capabilities section (optional)
+        include_platform_preamble: Include mesh tools docs (default False for sub-agents)
+        include_platform_footer: Include transfer_back reminder (default True)
+
+    Returns:
+        Complete system prompt with user preferences placeholder
+
+    Example:
+        # In agent/agent.py for a multi-agent system
+        from tap_wrapper.prompts import compose_sub_agent_prompt
+
+        researcher_agent = LlmAgent(
+            name="Researcher",
+            instruction=compose_sub_agent_prompt(
+                agent_name="researcher",
+                description="You research AI software tools based on user requirements.",
+                instructions="Focus on finding tools that match the user's industry.",
+            ),
+            ...
+        )
+
+        # This produces a prompt with:
+        # - Description
+        # - User preferences section with {researcher_user_preferences}
+        # - Instructions
+        # - Platform footer (transfer_back_to_parent reminder)
+    """
+    # Derive preferences key from agent name using normalize_preference_key
+    # "researcher" → "researcher_user_preferences"
+    # "AI-Researcher" → "ai_researcher_user_preferences"
+    # "QueryOptimizer" → "queryoptimizer_user_preferences"
+    normalized_name = normalize_preference_key(agent_name)
+    preferences_key = f"{normalized_name}_user_preferences"
+
+    return compose_system_prompt(
+        agent_description=description,
+        agent_capabilities=capabilities,
+        agent_instructions=instructions,
+        include_platform_preamble=include_platform_preamble,
+        include_platform_footer=include_platform_footer,
+        include_user_preferences=True,
+        user_preferences_key=preferences_key,
+    )
+
+
+def get_all_preference_keys_from_manifest() -> List[str]:
+    """
+    Get all preference state keys defined in system-manifest.yaml.
+
+    This is useful for:
+    - Verifying your sub-agent prompts use correct keys
+    - Debugging personalization issues
+    - Generating documentation
+
+    Returns:
+        List of preference keys, e.g., ["my_agent_user_preferences", "researcher_user_preferences"]
+
+    Example:
+        keys = get_all_preference_keys_from_manifest()
+        print(f"Manifest defines {len(keys)} preference keys: {keys}")
+    """
+    try:
+        from .manifest import load_system_manifest
+        manifest = load_system_manifest()
+        return list(manifest.state_schema.per_agent_preferences.keys())
+    except Exception as e:
+        logger.warning(f"Could not load preference keys from manifest: {e}")
+        return []
+
+
+# =============================================================================
+# LEGACY EXPORTS (DEPRECATED)
+# =============================================================================
+
+def get_system_prompt_dict() -> Dict[str, Any]:
+    """
+    Get system prompt as a dict.
+
+    .. deprecated::
+        This was used for Prompt Library registration.
+        Prompt Library has been deprecated. SMAs use their own prompts
+        defined in agent/prompts.py and composed via compose_system_prompt().
+
+    Returns:
+        Dict with prompt_type, content, description, tags
+    """
+    warnings.warn(
+        "get_system_prompt_dict() is deprecated. "
+        "Use compose_system_prompt() for prompt composition instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return {
+        "prompt_type": "system",
+        "content": compose_system_prompt(),
+        "description": "System prompt composed from platform boilerplate and agent-specific content",
+        "tags": ["composed", "v2"],
+    }
+
+
+def get_context_injection_dict() -> Dict[str, Any]:
+    """
+    Get context injection template as a dict.
+
+    .. deprecated::
+        This was used for Prompt Library registration.
+        Prompt Library has been deprecated. Context is now injected via
+        Gateway → server.py → session state, not via prompt templates.
+
+    Returns:
+        Dict with prompt_type, content, description, tags
+    """
+    warnings.warn(
+        "get_context_injection_dict() is deprecated. "
+        "Context is now injected via Gateway -> session state, not via prompt templates.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return {
+        "prompt_type": "context_injection",
+        "content": CONTEXT_INJECTION_TEMPLATE,
+        "description": "Context formatting template for history and LTM",
+        "tags": ["default", "v1"],
+    }
+
+
+def get_prompts() -> Dict[str, Dict[str, Any]]:
+    """
+    Get all prompts as a dict.
+
+    .. deprecated::
+        This was the main entry point for Prompt Library registration.
+        Prompt Library has been deprecated. Kept for backward compatibility.
+
+    Returns:
+        Dict mapping prompt_type to prompt config dict
+    """
+    warnings.warn(
+        "get_prompts() is deprecated. "
+        "Use compose_system_prompt() for prompt composition instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return {
+        "system": get_system_prompt_dict(),
+        "context_injection": get_context_injection_dict(),
+    }
+
+
+__all__ = [
+    # Main API - use these for prompt composition
+    "compose_system_prompt",          # For main agent (auto-adds user preferences)
+    "compose_sub_agent_prompt",       # For sub-agents (derives preferences key from name)
+    "get_all_preference_keys_from_manifest",  # For debugging/verification
+    "normalize_preference_key",       # Utility for normalizing agent names to preference keys
+    # Legacy/deprecated (kept for backward compatibility)
+    "get_system_prompt_dict",
+    "get_context_injection_dict",
+    "get_prompts",
+    # Platform templates (for advanced usage)
+    "PLATFORM_PREAMBLE",
+    "PLATFORM_FOOTER",
+    "CONTEXT_INJECTION_TEMPLATE",
+    "USER_PREFERENCES_TEMPLATE",
+    "DEFAULT_PREFERENCES_KEY",
+]

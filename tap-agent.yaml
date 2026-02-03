@@ -27,9 +27,8 @@ metadata:
   # Semantic version (MAJOR.MINOR.PATCH)
   version: 1.0.0
 
-  # AI model used by this agent
-  # Current options: gemini-3-flash-preview, gemini-3-pro-preview
-  model: gemini-3-flash-preview
+  # NOTE: AI model is configured in deployment.model below (single source of truth)
+  # Can be overridden at runtime via TAP_MODEL_NAME environment variable
 
   # Description (50-500 chars)
   # Used for semantic search in Cognee Registry
@@ -63,12 +62,12 @@ provider:
 schemas:
   # Input schema - REQUIRED
   input:
-    file: agent/input_schema.py
+    file: agent/schemas.py
     class: AgentInputSchema
 
   # Output schema - RECOMMENDED
   output:
-    file: agent/output_schema.py
+    file: agent/schemas.py
     class: AgentOutputSchema
 
 # =============================================================================
@@ -103,10 +102,12 @@ skills:
 # DEPLOYMENT CONFIGURATION
 # =============================================================================
 deployment:
-  # Runtime: vertex-ai | cloud-run
-  runtime: vertex-ai
+  # Runtime: cloud-run (SMAs expose A2A protocol endpoints)
+  runtime: cloud-run
 
-  # AI model (should match metadata.model)
+  # AI model - SINGLE SOURCE OF TRUTH
+  # Override at runtime via TAP_MODEL_NAME environment variable
+  # Current options: gemini-3-flash-preview, gemini-3-pro-preview
   model: gemini-3-flash-preview
 
   # Resources
@@ -131,7 +132,6 @@ runtime:
   # Entry points
   main: runtime/main.py
   server: runtime/server.py
-  deploy: runtime/deploy_vertex.py
 
   # Requirements
   requirements: runtime/requirements.txt
