@@ -11,6 +11,7 @@ Complete guide for building, deploying, and publishing agents on the Tailored Ag
 5. [Input Schemas](#input-schemas)
 6. [OAuth Credentials](#oauth-credentials)
 7. [Mesh Tools](#mesh-tools)
+    - [Knowledge Base Guide](KNOWLEDGE_BASE.md)
 8. [ADK Callbacks](#adk-callbacks)
 9. [Deployment](#deployment)
 10. [Registration](#registration)
@@ -579,6 +580,9 @@ set_tool_context(
 
 Mesh tools enable platform-wide capabilities. They return **intents** that Gateway executes.
 
+> **Querying Knowledge Bases**: See [KNOWLEDGE_BASE.md](KNOWLEDGE_BASE.md) for a complete guide
+> on setting up and querying org knowledge datasets with `search_knowledge`.
+
 ### Available Tools
 
 | Tool | Purpose |
@@ -590,6 +594,10 @@ Mesh tools enable platform-wide capabilities. They return **intents** that Gatew
 | `ask_user_permission` | Request permission for actions |
 | `request_input` | Collect structured input |
 | `request_agent_approval` | Request approval for non-entitled agents |
+| `calculate_one_time_price` | Get guaranteed price quote |
+| `search_knowledge` | Query org knowledge base (policies, docs, user memory) |
+| `consult_collective_intelligence` | Search platform-wide problem-solving knowledge |
+| `log_unfulfilled_request` | Log capability gaps for market analysis |
 | `set_needs_attention` | Signal user attention needed |
 | `set_complete` | Signal task completion |
 | `notify_user` | Send progress updates |
@@ -601,6 +609,7 @@ from tap_core.tools import (
     agent_lookup,
     transfer_to_agent,
     ask_clarifying_questions,
+    search_knowledge,
     set_complete,
 )
 
@@ -623,6 +632,14 @@ intent = ask_clarifying_questions(
         {"field": "year", "question": "Which tax year?", "type": "select"}
     ],
     reason="Need more details",
+)
+
+# Query org knowledge base
+intent = search_knowledge(
+    query="What is our refund policy for enterprise customers?",
+    dataset_name="org_policies",  # custom dataset, or "ltm" for user memory
+    search_type="GRAPH_COMPLETION",
+    limit=5,
 )
 
 # Signal completion

@@ -53,7 +53,7 @@ tap_template_agent/
 ├── tap_wrapper/            # PLATFORM CODE - Don't modify
 │   ├── __init__.py         # build_tap_agent(), setup_tool_context()
 │   ├── config.py           # Parses tap-agent.yaml
-│   ├── mesh_integration.py # Injects 12 TAP mesh tools
+│   ├── mesh_integration.py # Injects 14 TAP mesh tools
 │   ├── validation.py       # Auto input validation
 │   └── prompts.py          # Combines developer + platform prompts
 │
@@ -194,7 +194,7 @@ python scripts/register_agent.py \
 
 ## Mesh Tools (Auto-Injected)
 
-Your agent automatically gets these 12 TAP platform tools:
+Your agent automatically gets these 14 TAP platform tools:
 
 | Tool | Purpose |
 |------|---------|
@@ -206,6 +206,8 @@ Your agent automatically gets these 12 TAP platform tools:
 | `request_input` | Collect structured data via modal form |
 | `request_agent_approval` | Request approval for tertiary agents |
 | `calculate_one_time_price` | Get guaranteed price quote |
+| `search_knowledge` | Query org knowledge base (policies, docs, memory) |
+| `consult_collective_intelligence` | Search platform-wide problem-solving knowledge |
 | `log_unfulfilled_request` | Log gaps for market analysis |
 | `set_needs_attention` | Signal user attention needed |
 | `set_complete` | Signal completion (Master Agent only!) |

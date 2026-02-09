@@ -4,7 +4,7 @@ TAP Wrapper - Mesh Tools Integration
 Handles automatic injection of TAP mesh tools and context setup.
 Developers don't need to manage this - TAP handles it automatically.
 
-Mesh Tools (12 total):
+Mesh Tools (14 total):
 - agent_lookup: Search for specialist agents
 - transfer_to_agent: Delegate to another agent
 - transfer_back_to_parent: Return to parent agent
@@ -14,6 +14,8 @@ Mesh Tools (12 total):
 - request_agent_approval: Request tertiary agent approval
 - calculate_one_time_price: Get price quote
 - log_unfulfilled_request: Log capability gaps
+- consult_collective_intelligence: Search platform's collective knowledge
+- search_knowledge: Query org knowledge base (Cognee LTM)
 - set_needs_attention: Signal need for user direction
 - set_complete: Signal task completion
 - notify_user: Send notifications
